@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>NAI 画师串工作台</title>
+<link rel="stylesheet" href="styles.css?v=GH1788184336069">
+</head>
+<body>
+<div class="app">
+  <!-- 左侧栏 -->
+  <aside class="sidebar">
+    <!-- 可爱装饰：左上角小樱花，右上角小心心 -->
+    <div class="deco deco-tl" aria-hidden="true">🌸</div>
+    <div class="deco deco-tr" aria-hidden="true">💖</div>
+
+    <div class="brand-wrap">
+      <div class="brand-logo"><span class="brand-emoji">🎀</span> NAI 画廊库</div>
+      <div class="brand-sub">Artist Gallery</div>
+    </div>
+
+    <div class="nav-section">
+      <h4>浏览</h4>
+      <button id="artBtn" class="nav-link active" type="button" data-scrolltop="1" data-view="gallery">
+        <span class="ico">🖼</span><span class="lbl">画廊</span>
+      </button>
+      <button id="artistsNavBtn" class="nav-link" type="button" data-view="artists" title="按画师分组的画作文件夹">
+        <span class="ico">👥</span><span class="lbl">画师合集</span>
+      </button>
+      <button id="vibeBtn" class="nav-link" type="button">
+        <span class="ico">💡</span><span class="lbl">Vibe 库</span>
+      </button>
+    </div>
+
+    <div class="nav-section">
+      <h4>工具</h4>
+      <button id="selectBtn" class="nav-link" type="button" title="批量选择后统一改名 / 改画师 / 改标签">
+        <span class="ico">☑</span><span class="lbl">选择模式</span>
+      </button>
+      <button id="uploadBtn" class="nav-link" type="button">
+        <span class="ico">⬆</span><span class="lbl">上传画作</span>
+      </button>
+      <button id="batchBtn" class="nav-link" type="button">
+        <span class="ico">📦</span><span class="lbl">批量上传</span>
+      </button>
+      <button id="importBtn" class="nav-link" type="button">
+        <span class="ico">📥</span><span class="lbl">导入</span>
+      </button>
+      <button id="batchArtistBtn" class="nav-link" type="button" title="把混在正面提示词里的画师串一次全部分出来">
+        <span class="ico">🔀</span><span class="lbl">提画师串</span>
+      </button>
+      <button id="undoArtistBtn" class="nav-link hidden" type="button" title="撤销上一次批量提取，把画师串放回正面提示词">
+        <span class="ico">↩</span><span class="lbl">撤销</span>
+      </button>
+      <button id="delBrokenBtn" class="nav-link" type="button" title="删除所有「没有图片」的画作（重导原图后用来清掉失效的空白卡）">
+        <span class="ico">🗑</span><span class="lbl">删除无图</span>
+      </button>
+    </div>
+
+    <div class="nav-section">
+      <h4>管理</h4>
+      <button id="exportBtn" class="nav-link" type="button" title="导出一个备份文件…发到手机或另一台电脑再用「导入」即可同步">
+        <span class="ico">💾</span><span class="lbl">备份</span>
+      </button>
+      <button id="restoreBtn" class="nav-link" type="button" title="从「💾 备份」生成的文件恢复全部数据">
+        <span class="ico">📂</span><span class="lbl">恢复</span>
+      </button>
+      <button id="phoneBtn" class="nav-link" type="button" title="生成手机可扫的二维码">
+        <span class="ico">📱</span><span class="lbl">手机打开</span>
+      </button>
+      <button id="clearAllBtn" class="nav-link" type="button" title="清空本地全部内容">
+        <span class="ico">🗑</span><span class="lbl">清空</span>
+      </button>
+    </div>
+
+    <div class="sidebar-foot">
+      <button class="user-pill" id="themeToggle" type="button" title="点击切换日 / 夜模式" aria-label="切换日 / 夜模式">
+        <span class="theme-ico" aria-hidden="true">👤</span>
+        <span class="theme-text">来色日间</span>
+      </button>
+      <div class="stat-line" id="countBadge">0 件画作</div>
+      <div class="stat-line">共 <b id="artistCountLine">0</b> 位画师 · <b id="vibeCountLine">0</b> 个 Vibe</div>
+    </div>
+  </aside>
+
+<!-- 主区 -->
+<div class="main">
+  <!-- 可爱装饰：主区右上漂浮小星星，右下小猫爪 -->
+  <div class="deco deco-mr" aria-hidden="true">✨</div>
+  <div class="deco deco-ml" aria-hidden="true">🌷</div>
+  <div class="deco deco-mb" aria-hidden="true">🐾</div>
+
+  <!-- 空库提醒条（首次访问/换网址时出现） -->
+    <div id="warnBar" class="warn-bar hidden">
+      ⚠️ 这里现在是空的。两种用法都支持：
+      <b>① 双击打开就能用</b>（数据存在本浏览器，导入直接生效）；
+      <b>② 跑 serve.js / 部署云端</b>（数据在硬盘或云端，多设备同步）。
+      若画作在硬盘 <code>nai-workbench/data/index.json</code>，点下面按钮选它即可一键搬进本浏览器：
+      <div style="margin-top:10px"><button class="btn primary" id="warnImportDisk" type="button">📥 一键搬入硬盘数据</button></div>
+    </div>
+
+  <div id="artworkView">
+    <!-- 工具头部：标题 + 搜索 + 视图切换 + 主操作 -->
+    <div class="toolbar">
+      <h1>画廊总览</h1>
+      <div class="search-wrap">
+        <span class="search-ico">🔍</span>
+        <input id="search" type="search" placeholder="搜索画师 / 提示词 / 标签…">
+      </div>
+    </div>
+
+    <!-- 过滤行：批次 / 画师 / 标签 -->
+    <div class="filter-bar">
+      <div class="fgrp">
+        <span class="flab">画师</span>
+        <select id="artistFilter" class="pill-sel"><option value="">全部</option></select>
+      </div>
+      <div class="fgrp fgrp-tag">
+        <span class="flab">标签</span>
+        <button id="tagFilterBtn" class="pill-sel" type="button" aria-haspopup="true" aria-expanded="false">
+          <span id="tagFilterBtnLabel">标签</span><span class="caret">▾</span>
+        </button>
+        <div id="tagFilterPop" class="tag-filter-pop hidden" role="dialog" aria-label="多选标签筛选">
+          <input id="tagFilterSearch" type="search" placeholder="搜标签…" autocomplete="off" />
+          <div class="tag-filter-head">
+            <span class="tag-filter-mode" title="任一命中 = 包含任一选中标签；全部命中 = 同时拥有所有选中标签">
+              <label><input type="radio" name="tagMode" value="or" checked> 任一命中</label>
+              <label><input type="radio" name="tagMode" value="and"> 全部命中</label>
+            </span>
+            <span class="tag-filter-actions">
+              <button type="button" class="link" id="tagFilterAll">全选</button>
+              <span class="sep">·</span>
+              <button type="button" class="link" id="tagFilterNone">清空</button>
+            </span>
+          </div>
+          <div id="tagFilterList" class="tag-filter-list"></div>
+        </div>
+      </div>
+      <div class="fgrp">
+        <span class="flab">批次</span>
+        <select id="batchFilter" class="pill-sel"><option value="">全部</option></select>
+      </div>
+    </div>
+
+    <div id="gallery" class="gallery"></div>
+    <div id="emptyState" class="empty">
+      <div class="empty-emoji">🖼️</div>
+      <p>还没有画作，前往「<b>上传画作</b>」添加</p>
+    </div>
+  </div>
+
+  <!-- Vibe 库主视图（和画作画廊一样的纯缩略图网格） -->
+  <div id="vibeView" class="hidden">
+    <div class="toolbar vibe-h1-toolbar">
+      <button id="vibeBackBtn" class="btn ghost" type="button" title="回到画作画廊">← 画作</button>
+      <h1>💡 Vibe 库</h1>
+      <div class="search-wrap">
+        <span class="search-ico">🔍</span>
+        <input id="vibeSearch" type="search" placeholder="搜索 Vibe 名称 / 模型 / 编码键…">
+      </div>
+      <div class="right">
+        <span class="muted" style="font-size:13px">共 <b id="vibeCount">0</b> 个</span>
+        <button id="vibeSelectBtn" class="btn ghost" type="button" title="批量选择后统一改画师 / 改名 / 改标签">☑ 选择</button>
+        <button id="vibeImportBtn" class="btn primary" type="button">📥 ＋ 新增 Vibe</button>
+        <button id="exportVibeBtn" class="btn ghost" type="button">⬇ 导出</button>
+      </div>
+    </div>
+    <div id="vibeGrid" class="gallery"></div>
+    <div id="vibeEmpty" class="empty hidden">
+      <div class="empty-emoji">💡</div>
+      <p>还没有 Vibe，点「＋ 新增 Vibe」导入或记一条</p>
+    </div>
+  </div>
+
+    <!-- 分页条 -->
+    <div id="pager" class="pager hidden">
+      <span class="pager-info" id="pagerInfo"></span>
+      <div class="pager-ctrl">
+        <button class="btn tiny ghost" id="pagePrev">← 上一页</button>
+        <span id="pageNums" class="page-nums"></span>
+        <button class="btn tiny ghost" id="pageNext">下一页 →</button>
+      </div>
+      <label class="pager-size">每页
+        <select id="pageSize">
+          <option value="12">12</option>
+          <option value="24" selected>24</option>
+          <option value="48">48</option>
+          <option value="96">96</option>
+          <option value="0">全部</option>
+        </select>
+        张
+      </label>
+    </div>
+  </div>
+</div>
+
+<!-- 隐藏文件输入：被侧栏按钮 / 弹窗点击触发 .click() 来弹原生选择器 -->
+<input id="importFile" type="file" accept="application/json,.json,application/zip,.zip" hidden>
+<input id="restoreFile" type="file" accept="application/json,.json" hidden>
+
+<!-- 上传弹窗 -->
+<div id="uploadModal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>上传画作</h3>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div id="dropZone" class="dropzone">
+      <p>拖拽图片到这里，或 <label class="link">点击选择<input id="fileInput" type="file" accept="image/*" hidden></label></p>
+      <small>支持 NovelAI / A1111 导出的 PNG，会自动解析正 / 负提示词 · 也可直接 Ctrl+V 粘贴图片</small>
+    </div>
+    <div id="uploadForm" class="upload-form hidden">
+      <div class="quickfill">
+        <div class="qf-block"><span class="qf-label">已有画师（点一下填入）：</span><div id="qfArtists" class="qf-chips"></div></div>
+      </div>
+      <div class="preview"><img id="previewImg" alt="预览"></div>
+      <div class="fields">
+        <label>名字（标题，可选）
+          <input id="fTitle" type="text" placeholder="给这张画起个名字">
+        </label>
+        <label>画师
+          <input id="fArtist" type="text" placeholder="如：by makoto shinkai">
+        </label>
+        <label>标签（可多个）
+          <input id="fTags" type="text" placeholder="如：现代, 赛博朋克（空格或逗号分隔）">
+        </label>
+        <label>Positive Prompt
+          <textarea id="fPos" rows="4"></textarea>
+        </label>
+        <label>Negative Prompt
+          <textarea id="fNeg" rows="3"></textarea>
+        </label>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" data-close>取消</button>
+      <button id="saveArtBtn" class="btn primary" disabled>保存到工作台</button>
+    </div>
+  </div>
+</div>
+
+<!-- 批量上传弹窗 -->
+<div id="batchUploadModal" class="modal hidden">
+  <div class="modal-card wide">
+    <div class="modal-head">
+      <h3>📦 批量上传画作</h3>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div id="batchDrop" class="dropzone">
+      <p>拖拽多张图片到这里，或 <label class="link">点击选择（可多选）<input id="batchFileInput" type="file" accept="image/*" multiple hidden></label></p>
+      <small>一次可选多张；NAI / A1111 导出的 PNG 会自动解析正 / 负提示词。每张都可在下方单独填写提示词，再一次性保存。</small>
+    </div>
+    <div id="batchBar" class="batch-bar hidden">
+      <span class="qf-label">统一设置（点「应用到全部」）：</span>
+      <input id="batchArtistAll" type="text" placeholder="画师（留空=不覆盖）">
+      <input id="batchTagsAll" type="text" placeholder="标签（空格/逗号分隔）">
+      <button id="batchApplyAll" class="btn tiny">应用到全部</button>
+      <span id="batchStat" class="muted"></span>
+    </div>
+    <div id="batchArtistsWrap" class="quickfill hidden" style="margin:6px 0 10px">
+      <div class="qf-block"><span class="qf-label">已有画师（点一下填入「画师」框）：</span><div id="qfArtistsBatch" class="qf-chips"></div></div>
+    </div>
+    <div id="batchGrid" class="batch-grid"></div>
+    <div class="modal-foot">
+      <button class="btn ghost" data-close>取消</button>
+      <button id="batchUploadSaveBtn" class="btn primary" disabled>保存全部</button>
+    </div>
+  </div>
+</div>
+
+<!-- Vibe 弹窗 -->
+<!-- 导入 Vibe 弹窗（点主视图的「＋ 新增 Vibe」打开） -->
+<div id="vibeImportModal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>📥 新增 Vibe</h3>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div style="padding:6px 20px 4px">
+      <p class="muted" style="margin:6px 0 14px;font-size:13px;line-height:1.6">
+        NAI 的 Vibe 是<strong>风格编码文件</strong>（<code>.naiv4vibe</code> / <code>.naiv4vibebundle</code>），里面是编码后的「风格」数据，<strong>不是提示词文字</strong>。导入后画廊里会出现缩略图，可原样导出回 <code>.naiv4vibe</code>。
+      </p>
+      <h4 style="margin:4px 0 8px;font-size:13px;color:var(--berry)">① 导入编码文件</h4>
+      <div id="vibeDrop" class="dropzone vibe-drop-compact" style="margin-bottom:14px">
+        <p>把 <b>.naiv4vibe</b> / <b>.naiv4vibebundle</b> 拖到这里，或
+          <label class="link">选择文件<input id="vibeFile" type="file" accept=".naiv4vibe,.naiv4vib,.naiv4vibebundle,.json,application/json" hidden></label>
+          / <label class="link" id="vibePasteToggle">粘贴 JSON</label>
+        </p>
+        <textarea id="vibePaste" rows="3" placeholder="在此粘贴 .naiv4vibe 的 JSON…" class="hidden"
+          style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;font-family:monospace;font-size:12px;outline:none;resize:vertical;margin-top:8px"></textarea>
+        <div id="vibePasteRow" class="hidden" style="margin-top:8px;display:flex;gap:10px;justify-content:flex-end">
+          <button class="btn ghost" id="vibePasteCancel">取消</button>
+          <button class="btn primary" id="vibePasteDo">导入</button>
+        </div>
+      </div>
+      <h4 style="margin:6px 0 8px;font-size:13px;color:var(--berry)">② 或记一条文本备注（提示词）</h4>
+      <div id="textVibeForm" style="display:grid;grid-template-columns:1fr 1.4fr 1.2fr auto;gap:10px;align-items:end">
+        <input id="vName" placeholder="名称">
+        <input id="vPos" placeholder="Positive Prompt">
+        <input id="vNeg" placeholder="Negative Prompt（可选）">
+        <button id="addVibeBtn" class="btn primary">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 详情 / 灯箱 -->
+<div id="lightbox" class="modal hidden">
+  <div class="modal-card wide">
+    <div class="modal-head lb-head">
+      <div class="lb-head-fields">
+        <div class="lb-row" id="lbTitleRow">
+          <span class="lb-key">名字</span>
+          <span class="lb-val" id="lbTitleVal"></span>
+          <button class="btn tiny ghost" id="lbTitleEditBtn" title="编辑名字">✎</button>
+        </div>
+        <div class="lb-row" id="lbArtistRow">
+          <span class="lb-key">🎨 画师</span>
+          <span class="lb-val" id="lbArtistVal"></span>
+          <button class="btn tiny ghost" id="lbArtistEditBtn" title="编辑画师">✎</button>
+        </div>
+      </div>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div class="lb-body">
+      <div class="lb-imgwrap"><img id="lbImg" alt=""></div>
+      <div class="lb-info">
+        <div class="lb-meta" id="lbMeta"></div>
+        <div class="lb-tags" id="lbTags"></div>
+
+        <div class="lb-note" id="lbNoteWrap">
+          <div class="lb-note-head">
+            <span class="lb-key">📝 备注</span>
+            <button class="btn tiny ghost" id="lbNoteEditBtn" title="编辑备注">✎</button>
+          </div>
+          <div class="lb-note-body" id="lbNote"></div>
+        </div>
+        <div class="lb-edit hidden" id="lbNoteEdit">
+          <textarea id="lbNoteInput" rows="3" placeholder="给这张画写点备注（随便记，不影响名字/画师/提示词）"></textarea>
+          <button class="btn small primary" id="lbNoteSave">保存</button>
+        </div>
+        <div class="lb-note" id="lbLinkWrap">
+          <div class="lb-note-head">
+            <span class="lb-key">🔗 链接</span>
+            <button class="btn tiny ghost" id="lbLinkEditBtn" title="编辑链接">✎</button>
+            <a class="btn tiny primary hidden" id="lbLinkOpen" target="_blank" rel="noopener">↗ 跳转</a>
+          </div>
+          <div class="lb-note-body" id="lbLink"></div>
+        </div>
+        <div class="lb-edit hidden" id="lbLinkEdit">
+          <input id="lbLinkInput" type="url" placeholder="https://… 任意网页链接">
+          <button class="btn small primary" id="lbLinkSave">保存</button>
+        </div>
+
+        <div class="lb-edit hidden" id="lbTitleEdit">
+          <input id="lbTitleInput" type="text" placeholder="给这张画起个名字（可选）">
+          <button class="btn small primary" id="lbTitleSave">保存</button>
+        </div>
+        <div class="lb-edit hidden" id="lbArtistEdit">
+          <input id="lbArtistInput" type="text" placeholder="如：oki charcoal，或 by makoto shinkai">
+          <button class="btn small primary" id="lbArtistSave">保存</button>
+        </div>
+        <div class="lb-edit hidden" id="lbTagsEdit">
+          <input id="lbTagInput" type="text" placeholder="如：现代（空格或逗号分隔）">
+          <button class="btn small primary" id="lbTagSave">保存</button>
+        </div>
+
+        <div class="lb-actions">
+          <button class="btn small" id="lbDownload">⬇ 下载图片</button>
+          <button class="btn small" id="lbImgReplace" title="换一张图（覆盖当前画作图片）">🖼 换图</button>
+          <button class="btn small ghost" id="lbTagEditBtn">✎ 编辑标签</button>
+          <button class="btn small danger" id="lbDel">🗑 删除这张</button>
+        </div>
+        <div class="lb-prompts">
+          <div class="lb-prompt artist">
+            <label class="lb-prompt-label" for="lbArtist">🎨 画师串</label>
+            <textarea id="lbArtist" rows="2" placeholder="点「🔀 提取」自动从正面提示词拆出；也可手动编辑，例：1.6::artist xxx ::, 0.8::artist yyy ::"></textarea>
+            <div class="lb-prompt-btns">
+              <button class="btn small ghost" data-copy="lbArtist">复制</button>
+              <button class="btn small primary" id="lbExtractArtist" title="从当前正面提示词中提取画师串并保存">🔀 提取</button>
+              <button class="btn small ghost" id="lbChainBack" title="把画师串放回正面提示词开头，清空本字段（本张重来）">↩ 放回</button>
+              <button class="btn small danger-ghost" id="lbClearArtist" title="清空画师串">清空</button>
+            </div>
+          </div>
+          <div class="lb-prompt">
+            <label class="lb-prompt-label" for="lbPos">🎀 正面提示词</label>
+            <textarea id="lbPos" rows="5" placeholder="可在此修改正面提示词…"></textarea>
+            <div class="lb-prompt-btns">
+              <button class="btn small ghost" data-copy="lbPos">复制</button>
+              <button class="btn small danger-ghost" id="lbClearPos" title="清空正面提示词">清空</button>
+            </div>
+          </div>
+          <div class="lb-prompt neg">
+            <label class="lb-prompt-label" for="lbNeg">🚫 负面提示词</label>
+            <textarea id="lbNeg" rows="3" placeholder="可在此修改负面提示词…"></textarea>
+            <div class="lb-prompt-btns">
+              <button class="btn small ghost" data-copy="lbNeg">复制</button>
+              <button class="btn small danger-ghost" id="lbClearNeg" title="清空负面提示词">清空</button>
+            </div>
+          </div>
+        </div>
+        <div class="lb-save-row">
+          <button class="btn small primary" id="lbPromptSave">💾 保存提示词</button>
+          <span class="muted" style="font-size:12px">改完点这里，刷新/换浏览器也不丢</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 换图弹窗：支持点击选择 / 拖拽 / Ctrl+V 粘贴，交互与上传画作一致 -->
+<div id="replaceModal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>🖼 换图</h3>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div id="replaceDrop" class="dropzone">
+      <p>拖拽新图片到这里，或 <label class="link">点击选择<input id="replaceFile" type="file" accept="image/*" hidden></label></p>
+      <small>也可直接 Ctrl+V 粘贴图片 · 新图会覆盖当前画作，原图可从备份找回</small>
+    </div>
+    <div id="replacePreview" class="replace-preview hidden">
+      <p class="muted">新图预览：<span id="replaceSize"></span></p>
+      <img id="replacePreviewImg" alt="预览">
+      <div class="replace-actions">
+        <button class="btn small primary" id="replaceConfirm">✓ 确认替换</button>
+        <button class="btn small ghost" id="replaceCancel">重新选</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Vibe 详情弹窗（点 Vibe 卡片打开） -->
+<div id="vibeDetail" class="modal hidden">
+  <div class="modal-card wide">
+    <div class="modal-head">
+      <h3 id="vdName">💡 Vibe</h3>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div class="vd-body">
+      <div class="vd-imgwrap"><img id="vdImg" alt=""></div>
+      <div class="vd-info">
+        <div class="vd-chips" id="vdChips"></div>
+        <div class="vd-rows" id="vdRows"></div>
+        <div class="vd-prompts" id="vdPrompts">
+          <div class="vd-prompt hidden" id="vdPromptPosBlock">
+            <label>🎀 正面提示词</label>
+            <textarea id="vdPos" rows="4" readonly></textarea>
+            <button class="btn tiny ghost" data-copy="vdPos">复制</button>
+          </div>
+          <div class="vd-prompt neg hidden" id="vdPromptNegBlock">
+            <label>🚫 负面提示词</label>
+            <textarea id="vdNeg" rows="3" readonly></textarea>
+            <button class="btn tiny ghost" data-copy="vdNeg">复制</button>
+          </div>
+        </div>
+        <div class="lb-note" id="vdNoteWrap">
+          <div class="lb-note-head">
+            <span class="lb-key">📝 备注</span>
+            <button class="btn tiny ghost" id="vdNoteEditBtn" title="编辑备注">✎</button>
+          </div>
+          <div class="lb-note-body" id="vdNoteView"></div>
+          <div class="lb-edit hidden" id="vdNoteEdit">
+            <textarea id="vdNoteInput" rows="3" placeholder="给这个 Vibe 写点备注（随便记，不影响提示词/编码）"></textarea>
+            <button class="btn small primary" id="vdNoteSave">保存</button>
+          </div>
+        </div>
+        <div class="lb-note" id="vdLinkWrap">
+          <div class="lb-note-head">
+            <span class="lb-key">🔗 链接</span>
+            <button class="btn tiny ghost" id="vdLinkEditBtn" title="编辑链接">✎</button>
+            <a class="btn tiny primary hidden" id="vdLinkOpen" target="_blank" rel="noopener">↗ 跳转</a>
+          </div>
+          <div class="lb-note-body" id="vdLinkView"></div>
+          <div class="lb-edit hidden" id="vdLinkEdit">
+            <input id="vdLinkInput" type="url" placeholder="https://…  NAI/Civitai/任意网页">
+            <button class="btn small primary" id="vdLinkSave">保存</button>
+          </div>
+        </div>
+        <div class="lb-note" id="vdArtistWrap">
+          <div class="lb-note-head">
+            <span class="lb-key">🎨 画师</span>
+            <button class="btn tiny ghost" id="vdArtistEditBtn" title="编辑画师">✎</button>
+          </div>
+          <div class="lb-note-body" id="vdArtistView"></div>
+          <div class="lb-edit hidden" id="vdArtistEdit">
+            <input id="vdArtistInput" type="text" placeholder="关联的画师（如 1.6::artist xxx ::）">
+            <button class="btn small primary" id="vdArtistSave">保存</button>
+          </div>
+          <div class="qf-block" id="vdArtistQf" style="display:none">
+            <span class="qf-label">已有画师（点一下填入）：</span>
+            <div id="qfArtistsVibe" class="qf-chips"></div>
+          </div>
+        </div>
+        <div class="vd-actions">
+          <button class="btn primary hidden" id="vdDownload">⬇ 下载 .naiv4vib</button>
+          <button class="btn ghost" id="vdSetThumb">🖼 预览图</button>
+          <button class="btn ghost" id="vdRename">✎ 改名</button>
+          <button class="btn ghost danger-ghost" id="vdDelete">🗑 删除</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 画师合集备注 / 链接 弹窗（点 folder-card 上的 📝 按钮打开） -->
+<div id="artistMetaModal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>🎨 <span id="amName">画师</span></h3>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div style="padding:14px 20px 6px;display:flex;flex-direction:column;gap:14px">
+      <div class="vd-prompt">
+        <label>📝 备注</label>
+        <textarea id="amNoteInput" rows="4" placeholder="给这个画师合集写点备注（不影响画作/提示词）"></textarea>
+        <button class="btn small primary" id="amNoteSave">保存备注</button>
+      </div>
+      <div class="vd-prompt">
+        <label>🔗 链接</label>
+        <input id="amLinkInput" type="text" placeholder="https://…  NAI/Civitai/任意网页">
+        <button class="btn small primary" id="amLinkSave">保存链接</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 导入作品弹窗 -->
+<div id="importModal" class="modal hidden">
+  <div class="modal-card wide">
+    <div class="modal-head"><h3>导入画作 / 画廊</h3><button class="x" data-close>✕</button></div>
+    <div style="padding:6px 20px 4px">
+      <div class="import-tabs">
+        <button class="itab active" data-tab="zip">ZIP 画廊导入</button>
+        <button class="itab" data-tab="json">JSON 备份导入</button>
+      </div>
+    </div>
+
+    <!-- ZIP 标签 -->
+    <div id="tab-zip" class="import-tab">
+      <div id="zipDrop" class="dropzone" style="margin:14px 20px">
+        <p>把插件导出的 <b>nai-preset-switcher-gallery-export.zip</b> 拖到这里</p>
+        <small>支持拖拽 / 选择文件；会自动解析其中的画廊批次、提示词与 Vibe，并在本地浏览、下载</small>
+        <div style="margin-top:12px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+          <button class="btn ghost" id="zipFilePick">选择 ZIP 文件</button>
+          <button class="btn ghost" id="zipFolderBtn">从项目文件夹导入</button>
+        </div>
+      </div>
+      <div id="zipProgress" class="zip-progress hidden"></div>
+    </div>
+
+    <!-- JSON 标签 -->
+    <div id="tab-json" class="import-tab hidden">
+      <div style="padding:14px 20px 4px">
+        <p class="muted" style="margin:0 0 10px">粘贴之前「导出」得到的 JSON，或点击下方选择文件。</p>
+        <textarea id="importPaste" rows="7" placeholder="在此粘贴 JSON…"
+          style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;font-family:monospace;font-size:12px;outline:none;resize:vertical"></textarea>
+        <div style="display:flex;gap:10px;margin-top:14px;justify-content:flex-end;flex-wrap:wrap">
+          <button class="btn ghost" id="importFilePick">选择文件</button>
+          <button class="btn ghost" data-close>取消</button>
+          <button class="btn primary" id="importDoBtn">导入</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 批量操作栏（选择模式出现） -->
+<div id="selectBar" class="select-bar hidden">
+  <span id="selCount" class="sel-count">选择画作</span>
+  <div class="sel-actions">
+    <button class="btn tiny ghost" id="selAll">全选本页</button>
+    <button class="btn tiny ghost" id="selClear">清空选择</button>
+    <button class="btn tiny primary" id="batchEditBtn">批量编辑</button>
+    <button class="btn tiny danger" id="batchDelBtn">删除选中</button>
+    <button class="btn tiny ghost" id="selectExitBtn">退出选择</button>
+  </div>
+</div>
+
+<!-- Vibe 批量操作栏（选择模式出现） -->
+<div id="vibeSelectBar" class="select-bar hidden">
+  <span id="vibeSelCount" class="sel-count">选择 Vibe</span>
+  <div class="sel-actions">
+    <button class="btn tiny ghost" id="vibeSelAll">全选本页</button>
+    <button class="btn tiny ghost" id="vibeSelClear">清空选择</button>
+    <button class="btn tiny primary" id="vibeBatchEditBtn">批量编辑</button>
+    <button class="btn tiny danger" id="vibeBatchDelBtn">删除选中</button>
+    <button class="btn tiny ghost" id="vibeSelectExitBtn">退出选择</button>
+  </div>
+</div>
+
+<!-- Vibe 批量编辑弹窗 -->
+<div id="vibeBatchModal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head"><h3>批量编辑 Vibe <span id="vibeBatchCount" class="muted"></span></h3><button class="x" data-close>✕</button></div>
+    <div class="batch-form">
+      <p class="muted" style="font-size:13px;margin:4px 0 14px;line-height:1.6">
+        仅勾选的字段会应用到选中的 Vibe。勾选后留空 = 清空该字段。
+      </p>
+      <div class="bfield">
+        <label class="bf-apply"><input type="checkbox" id="vbArtistOn"> 画师</label>
+        <input id="vbArtist" type="text" placeholder="统一设置画师">
+        <div class="qf-block"><span class="qf-label">已有画师（点一下填入）：</span><div id="qfArtistsVibeBatch" class="qf-chips"></div></div>
+      </div>
+      <div class="bfield">
+        <label class="bf-apply"><input type="checkbox" id="vbNameOn"> 名称</label>
+        <input id="vbName" type="text" placeholder="统一设置名称（留空则清空）">
+      </div>
+      <div class="bfield">
+        <label class="bf-apply"><input type="checkbox" id="vbBatchOn"> 批次</label>
+        <input id="vbBatch" type="text" placeholder="统一设置批次（如 2026-08 合集）">
+      </div>
+      <div class="bfield">
+        <label class="bf-apply"><input type="checkbox" id="vbTagsOn"> 标签</label>
+        <select id="vbTagMode" title="覆盖=替换全部标签；追加=在原有基础上新增">
+          <option value="set">覆盖</option>
+          <option value="add">追加</option>
+        </select>
+        <input id="vbTags" type="text" placeholder="如：现代, 赛博朋克（空格或逗号分隔）">
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" data-close>取消</button>
+        <button class="btn primary" id="vibeBatchSaveBtn">应用到选中</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 批量编辑弹窗 -->
+<div id="batchModal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head"><h3>批量编辑 <span id="batchCount" class="muted"></span></h3><button class="x" data-close>✕</button></div>
+    <div class="batch-form">
+      <p class="muted" style="font-size:13px;margin:4px 0 14px;line-height:1.6">
+        仅勾选的字段会应用到选中的画作。勾选后留空 = 清空该字段。
+      </p>
+      <div class="bfield">
+        <label class="bf-apply"><input type="checkbox" id="bNameOn"> 名字</label>
+        <input id="bName" type="text" placeholder="统一设置名字（留空则清空）">
+      </div>
+      <div class="bfield">
+        <label class="bf-apply"><input type="checkbox" id="bArtistOn"> 画师</label>
+        <input id="bArtist" type="text" placeholder="统一设置画师">
+      </div>
+      <div class="bfield">
+        <label class="bf-apply"><input type="checkbox" id="bBatchOn"> 批次</label>
+        <input id="bBatch" type="text" placeholder="统一设置批次（如 2026-08 合集）">
+      </div>
+      <div class="bfield">
+        <label class="bf-apply"><input type="checkbox" id="bTagsOn"> 标签</label>
+        <select id="bTagMode" title="覆盖=替换全部标签；追加=在原有基础上新增">
+          <option value="set">覆盖</option>
+          <option value="add">追加</option>
+        </select>
+        <input id="bTags" type="text" placeholder="如：现代, 赛博朋克（空格或逗号分隔）">
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" data-close>取消</button>
+        <button class="btn primary" id="batchSaveBtn">应用到选中</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 手机扫码打开 -->
+<div id="phoneModal" class="modal hidden">
+  <div class="modal-card" style="max-width:440px">
+    <div class="modal-head"><h3>📱 手机打开</h3><button class="x" data-close>✕</button></div>
+    <div style="padding:8px 20px 20px">
+      <p class="muted" style="font-size:13px;line-height:1.7;margin:4px 0 14px;text-align:left">
+        手机和电脑连<b>同一 Wi-Fi</b>，用手机浏览器扫码（或手动输入下方网址）即可打开工作台。
+        首次需放通电脑防火墙的 <b>TCP 8137</b> 入站（管理员 PowerShell 执行：
+        <code style="font-size:11px">New-NetFirewallRule -DisplayName "NAI 8137" -Direction Inbound -Protocol TCP -LocalPort 8137 -Action Allow</code>）。
+      </p>
+      <label style="font-size:12px;font-weight:700;color:#5a6072;display:block;margin-bottom:6px">
+        电脑局域网 IP（电脑 cmd 输 <code>ipconfig</code> 查 IPv4；若本页已用局域网 IP 打开可留空）
+      </label>
+      <input id="phoneIP" type="text" placeholder="如 192.168.1.23" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:13px;outline:none;margin-bottom:14px">
+      <div id="phoneQR" style="display:flex;justify-content:center;padding:8px 0;min-height:40px"></div>
+      <div style="text-align:center;margin-top:8px;display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap">
+        <span class="muted" style="font-size:12px">或复制网址：</span>
+        <code id="phoneURL" style="font-size:12px;word-break:break-all"></code>
+        <button class="btn tiny ghost" id="phoneCopy">复制</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 设置 Vibe 预览图 -->
+<div id="vibeThumbModal" class="modal hidden">
+  <div class="modal-card" style="max-width:460px">
+    <div class="modal-head"><h3>设置预览图</h3><button class="x" data-close>✕</button></div>
+    <div style="padding:6px 20px 4px">
+      <p class="muted" style="font-size:13px;margin:6px 0 12px;line-height:1.6">给这个 Vibe 配一张预览图，方便在列表里一眼认出。</p>
+      <div id="vibeThumbDrop" class="dropzone" style="margin:0 0 12px;padding:24px 14px">
+        <div style="font-size:14px;line-height:1.7">
+          <span class="link" id="vibeThumbPick">📁 点击选择图片</span>
+          <span class="muted" style="margin:0 6px">·</span>
+          <span class="muted">把图片拖到这里</span>
+          <span class="muted" style="margin:0 6px">·</span>
+          <span class="muted"><b>Ctrl+V 粘贴</b></span>
+        </div>
+        <p class="muted" style="font-size:11px;margin:8px 0 0">支持 PNG / JPG / WebP，自动压缩到 720px</p>
+      </div>
+      <input id="vbThumbFile" type="file" accept="image/*" style="display:none">
+      <div id="vbThumbPreview" style="text-align:center;margin-bottom:14px"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+        <button class="btn ghost danger-ghost" id="vbThumbRemove" style="margin-right:auto">移除预览图</button>
+        <button class="btn ghost" data-close>取消</button>
+        <button class="btn primary" id="vbThumbSave">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 应用内确认弹窗 -->
+<div id="confirmModal" class="modal hidden">
+  <div class="modal-card" style="max-width:380px">
+    <div class="modal-head"><h3>请确认</h3></div>
+    <div style="padding:6px 20px 4px">
+      <p id="confirmMsg" class="muted" style="margin:6px 0 18px;font-size:14px;line-height:1.5"></p>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn ghost" id="confirmCancel">取消</button>
+        <button class="btn danger" id="confirmOk">删除</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="jszip.min.js"></script>
+<!-- 批量提取画师串 -->
+<div id="batchArtistModal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>批量提取画师串</h3>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div class="ba-body">
+      <p id="baSummary" class="ba-summary"></p>
+      <div id="baPreview" class="ba-preview"></div>
+      <p class="ba-note">只会改「正面提示词」和「画师串」两个字段，标题 / 标签 / 图片 / 负面提示词一律不动。提取后可用「↩ 撤销」还原。</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" data-close>取消</button>
+      <button class="btn danger-ghost" id="baResetAll" title="把所有已提取的画师串放回正面提示词，清空该字段">↩ 全部放回正面</button>
+      <button class="btn primary" id="baConfirm">确认提取</button>
+    </div>
+  </div>
+</div>
+<script src="config.js?v=GH1788184336069"></script>
+  <script src="app.js?v=GH1788184336069"></script>
+</body>
+</html>
