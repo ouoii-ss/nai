@@ -7,10 +7,13 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>NAI 画师串工作台</title>
-<link rel="stylesheet" href="styles.css?v=GH1788184336069">
+<link rel="stylesheet" href="styles.css?v=GH1788239617898">
 </head>
 <body>
 <div class="app">
+  <!-- 手机端：侧栏抽屉开关 + 遮罩 -->
+  <button id="navToggle" class="nav-toggle" type="button" aria-label="菜单">☰</button>
+  <div id="navBackdrop" class="nav-backdrop"></div>
   <!-- 左侧栏 -->
   <aside class="sidebar">
     <!-- 可爱装饰：左上角小樱花，右上角小心心 -->
@@ -49,14 +52,8 @@
       <button id="importBtn" class="nav-link" type="button">
         <span class="ico">📥</span><span class="lbl">导入</span>
       </button>
-      <button id="batchArtistBtn" class="nav-link" type="button" title="把混在正面提示词里的画师串一次全部分出来">
-        <span class="ico">🔀</span><span class="lbl">提画师串</span>
-      </button>
-      <button id="undoArtistBtn" class="nav-link hidden" type="button" title="撤销上一次批量提取，把画师串放回正面提示词">
-        <span class="ico">↩</span><span class="lbl">撤销</span>
-      </button>
-      <button id="delBrokenBtn" class="nav-link" type="button" title="删除所有「没有图片」的画作（重导原图后用来清掉失效的空白卡）">
-        <span class="ico">🗑</span><span class="lbl">删除无图</span>
+      <button id="newTextArtBtn" class="nav-link" type="button" title="先不传图，建一张空白画作，只填提示词/画师串/备注，之后随时可补图">
+        <span class="ico">✏️</span><span class="lbl">新建文字</span>
       </button>
     </div>
 
@@ -326,7 +323,7 @@
       <button class="x" data-close>✕</button>
     </div>
     <div class="lb-body">
-      <div class="lb-imgwrap"><img id="lbImg" alt=""></div>
+      <div class="lb-imgwrap"><img id="lbImg" alt=""><button id="lbAddImg" class="lb-add-img hidden" type="button" title="给这张画作添加一张图片">📷 添加图片</button></div>
       <div class="lb-info">
         <div class="lb-meta" id="lbMeta"></div>
         <div class="lb-tags" id="lbTags"></div>
@@ -733,26 +730,7 @@
 <div id="toast" class="toast hidden"></div>
 
 <script src="jszip.min.js"></script>
-<!-- 批量提取画师串 -->
-<div id="batchArtistModal" class="modal hidden">
-  <div class="modal-card">
-    <div class="modal-head">
-      <h3>批量提取画师串</h3>
-      <button class="x" data-close>✕</button>
-    </div>
-    <div class="ba-body">
-      <p id="baSummary" class="ba-summary"></p>
-      <div id="baPreview" class="ba-preview"></div>
-      <p class="ba-note">只会改「正面提示词」和「画师串」两个字段，标题 / 标签 / 图片 / 负面提示词一律不动。提取后可用「↩ 撤销」还原。</p>
-    </div>
-    <div class="modal-foot">
-      <button class="btn ghost" data-close>取消</button>
-      <button class="btn danger-ghost" id="baResetAll" title="把所有已提取的画师串放回正面提示词，清空该字段">↩ 全部放回正面</button>
-      <button class="btn primary" id="baConfirm">确认提取</button>
-    </div>
-  </div>
-</div>
-<script src="config.js?v=GH1788184336069"></script>
-  <script src="app.js?v=GH1788184336069"></script>
+<script src="config.js?v=GH1788239617898"></script>
+  <script src="app.js?v=GH1788239617898"></script>
 </body>
 </html>

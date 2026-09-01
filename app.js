@@ -16,6 +16,17 @@ let RAW_EXTERNAL = false; // 云端模式：vibes 的 raw 拆到静态文件 /da
 let usingServer = false;  // true=服务端存储（serve.js / 云端）；false=浏览器本地 IndexedDB（双击打开即可用）
 let STATIC_SITE = false; // 静态托管模式（GitHub Pages）：数据来自仓库内静态文件，无后端，写入为无操作
 
+// file:// 双击打开时，若本机服务（serve.js）在跑，就通过它连到硬盘数据库；
+// 否则退回离线（IndexedDB / 内置 seed）。这两个基址在 loadFromAPI 里按协议设置。
+let API_BASE = '';                       // file:// 下 = 'http://127.0.0.1:8137'，否则空串（同源请求）
+let RAW_BASE = '/data/vibes-raw/';      // vibe raw 静态基址（file:// 下换成绝对地址）
+function fetchWithTimeout(url, opts, ms) {
+  if (!ms) return fetch(url, opts);
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, Object.assign({}, opts, { signal: ctrl.signal })).finally(() => clearTimeout(t));
+}
+
 // ===== 本地浏览器存储（IndexedDB）：无服务端时的兜底，双击打开 index.html 也能用、导入也工作 =====
 const LOCAL_DB = 'nai_wb_local';
 const LOCAL_STORE = 'data';
@@ -167,7 +178,11 @@ async function loadFromAPI() {
     return;
   }
   try {
-    const r = await fetch('/api/data?_=' + Date.now(), { cache: 'no-store' });
+    // file:// 双击打开：尝试连本机服务（serve.js）的硬盘数据库；带短超时，连不上就退回离线
+    const isFile = location.protocol === 'file:';
+    API_BASE = isFile ? 'http://127.0.0.1:8137' : '';
+    RAW_BASE = isFile ? 'http://127.0.0.1:8137/data/vibes-raw/' : '/data/vibes-raw/';
+    const r = await fetchWithTimeout(API_BASE + '/api/data?_=' + Date.now(), { cache: 'no-store' }, isFile ? 1500 : 0);
     if (!r.ok) throw new Error('API 返回 ' + r.status);
     const data = await r.json();
     const rawA = Array.isArray(data.artworks) ? data.artworks : [];
@@ -179,6 +194,7 @@ async function loadFromAPI() {
     RAW_EXTERNAL = !!(data.meta && data.meta.rawExternal);
     if (RAW_EXTERNAL) { try { await attachVibeRaws(); } catch (e) { /* 取 raw 失败不阻断列表 */ } }
     usingServer = true;
+    if (isFile) toast('已连接本机数据库（' + artworks.length + ' 张画作 + ' + vibes.length + ' 个 Vibe），改动会存到硬盘 ✓');
     // 若后端本就有重复条目，加载时顺手把干净版本写回，彻底清除重复
     if (artworks.length !== rawA.length || vibes.length !== rawV.length) {
       try { await saveToAPI(); } catch (e) { /* 写回失败不影响本次读取 */ }
@@ -219,7 +235,7 @@ async function attachVibeRaws() {
     if (!v || !v.id || v.raw) return;
     try {
       // raw 是部署时生成的静态文件，内容不变，允许浏览器/CDN 缓存（不强制 no-store）
-      const base = STATIC_SITE ? 'data/vibes-raw/' : '/data/vibes-raw/';
+      const base = STATIC_SITE ? 'data/vibes-raw/' : RAW_BASE;
       const r = await fetch(base + encodeURIComponent(v.id) + '.json');
       if (!r.ok) return;
       v.raw = await r.json();
@@ -230,7 +246,7 @@ async function attachVibeRaws() {
 // 序列化 + 防抖写入：100ms 内多次改动合并成一次 POST
 let _saveTimer = null;
 let _saveResolvers = [];
-function _flushSaveNow() {
+async function _flushSaveNow() {
   if (STATIC_SITE) {
     // 静态托管：没有后端可写，假装成功以免 UI 报错（横幅已提示用户改动不保存）
     rs.forEach(({ res }) => res({ ok: true }));
@@ -239,17 +255,45 @@ function _flushSaveNow() {
   if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
   const rs = _saveResolvers; _saveResolvers = [];
   if (usingServer) {
-    // 云端模式：raw 已在静态文件里，保存时剥离，避免每次改动都上传几十 MB
+    // 服务端模式：保存前先合并服务器现有数据，避免旧客户端（如刷新前的内存态 / 多标签页）
+    // 把服务器上的新数据整体覆盖掉而丢失。规则：同 id 且内容不同 -> 保留本地(即本次编辑)；
+    // 同 id 且内容相同 -> 任取(不丢)；服务器独有 -> 保留；本地独有 -> 追加。
+    let arts = artworks, vbs = vibes;
+    try {
+      const cur = await fetchWithTimeout(API_BASE + '/api/data?_=' + Date.now(), { cache: 'no-store' }, 0);
+      if (cur.ok) {
+        const cd = await cur.json();
+        const sA = dedupeById(Array.isArray(cd.artworks) ? cd.artworks : []);
+        const localA = new Map(artworks.filter(a => a && a.id != null).map(a => [a.id, a]));
+        const sIdsA = new Set(sA.map(a => a.id));
+        const mergedA = sA.map(s => {
+          const l = localA.get(s.id);
+          if (l && JSON.stringify(l) !== JSON.stringify(s)) return l; // 本地有编辑 -> 用本地
+          return s; // 相同或服务端独有 -> 保留服务端
+        });
+        arts = dedupeById([...mergedA, ...artworks.filter(a => a && a.id != null && !sIdsA.has(a.id))]);
+        const sV = dedupeById(Array.isArray(cd.vibes) ? cd.vibes : []);
+        const localV = new Map(vibes.filter(v => v && v.id != null).map(v => [v.id, v]));
+        const sIdsV = new Set(sV.map(v => v.id));
+        const mergedV = sV.map(s => {
+          const l = localV.get(s.id);
+          if (l && JSON.stringify(l) !== JSON.stringify(s)) return l;
+          return s;
+        });
+        vbs = dedupeById([...mergedV, ...vibes.filter(v => v && v.id != null && !sIdsV.has(v.id))]);
+      }
+    } catch (e) { /* 合并失败则用内存态直接保存 */ }
+    // raw 已在静态文件里，保存时剥离，避免每次改动都上传几十 MB
     const vibesToSave = RAW_EXTERNAL
-      ? vibes.map(v => {
+      ? vbs.map(v => {
           if (v && typeof v === 'object' && ('raw' in v)) { const c = Object.assign({}, v); delete c.raw; return c; }
           return v;
         })
-      : vibes;
-    return fetch('/api/data', {
+      : vbs;
+    return fetch(API_BASE + '/api/data', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ artworks, vibes: vibesToSave, artistMeta }),
+      body: JSON.stringify({ artworks: arts, vibes: vibesToSave, artistMeta }),
     }).then(r => {
       if (!r.ok) throw new Error('API ' + r.status);
       return r.json();
@@ -1763,6 +1807,8 @@ async function doReplaceImage(id, file) {
     await replaceArtworkImage(id, full, thumb);
     $('lbImg').src = thumb;          // 灯箱立即显示新图
     renderGallery();                 // 画廊缩略图同步刷新
+    const _ai = $('lbAddImg'); if (_ai) _ai.classList.add('hidden');
+    const _rb = $('lbImgReplace'); if (_rb) _rb.textContent = '🖼 换图';
     toast('已换图 ✓');
   } catch (e) {
     console.error(e);
@@ -1952,22 +1998,6 @@ async function clearAll() {
   renderVibes();
   toast('已清空本地全部内容');
 }
-// 删除所有「没有图片」的画作（重导原图后清掉失效的空白卡）
-async function deleteBrokenArtworks() {
-  const broken = artworks.filter(a => a && a.source === 'upload' && (!a.full || a.full.indexOf('data:') !== 0));
-  if (!broken.length) { toast('没有「无图」的画作了 👍'); return; }
-  if (!await confirmModal('确定删除这 ' + broken.length + ' 张「没有图片」的画作吗？\n（重导原图后用它清掉失效的空白卡，此操作不可恢复）', false)) return;
-  const ids = new Set(broken.map(a => a.id));
-  artworks = artworks.filter(a => !ids.has(a.id));
-  const stored = await ensureImgStored();
-  for (const id of ids) { try { await localDel(IMGKEY(id)); } catch (e) {} stored.delete(id); }
-  await saveToAPI();
-  refreshFilters();
-  refreshBatchFilter();
-  renderGallery();
-  toast('已删除 ' + broken.length + ' 张无图画作');
-}
-
 /* ============ 灯箱 ============ */
 function openLightbox(id, opts) {
   const a = getArt(id);
@@ -1975,6 +2005,10 @@ function openLightbox(id, opts) {
   lbCurrent = id;
   $('lbImg').src = a.thumb;
   $('lbImg').decoding = 'async';
+  // 无图时显示「添加图片」入口，有图时显示「换图」
+  const _hasImg = !!(a.full && a.full.trim());
+  const _addImg = $('lbAddImg'); if (_addImg) _addImg.classList.toggle('hidden', _hasImg);
+  const _repBtn = $('lbImgReplace'); if (_repBtn) _repBtn.textContent = _hasImg ? '🖼 换图' : '📷 添加图片';
   // 标题（名字）：用户起的标题，与画师完全独立；无标题显示中性占位，不再用画师回填
   const tv = $('lbTitleVal');
   if (a.title && a.title.trim()) {
@@ -2018,6 +2052,33 @@ function openLightbox(id, opts) {
     const edit = $('lbNoteEdit');
     if (edit) { edit.classList.remove('hidden'); $('lbNoteInput').focus(); }
   }
+}
+// 新建「纯文字画作」：先不传图，只建空壳供填写提示词/画师串/备注，之后随时可点「添加图片」补图
+async function createTextArtwork() {
+  const a = {
+    id: uid(),
+    thumb: PLACEHOLDER_THUMB,
+    full: '',
+    source: 'text',
+    file: '',
+    title: '',
+    artist: '',
+    artistChain: '',
+    positive: '',
+    negative: '',
+    tags: [],
+    vibe: '',
+    note: '',
+    link: '',
+    batch: '',
+    params: {},
+    createdAt: Date.now(),
+  };
+  await addArtwork(a);
+  refreshFilters();
+  renderGallery();
+  openLightbox(a.id);
+  toast('已新建一张文字画作，填好提示词后随时可点图片区「📷 添加图片」补图 ✓');
 }
 function renderLbTags(a) {
   const tags = getTags(a);
@@ -2201,120 +2262,20 @@ async function clearPromptField(which) {
   // 以「文本框里当前的内容」为准（用户可能改了还没保存），不要用已保存的值判断
   const cur = el ? el.value : f.get();
   if (!cur.trim()) { toast(`${f.name} 本来就是空的`); return; }
-  if (!await confirmModal(`确定清空「${f.name}」吗？清空后可用工具栏的「↩ 撤销」恢复。`, false)) return;
-  // 备份供撤销（含 negative，这样清空负面也能撤销）
-  lastArtistBatchBackup = [{ id: a.id, positive: a.positive, negative: a.negative, artistChain: a.artistChain || '' }];
+  if (!await confirmModal(`确定清空「${f.name}」吗？此操作不可撤销，请确认。`, false)) return;
   f.set('');
   if (el) el.value = '';
   try {
     await addArtwork(a);
     refreshFilters();
     renderGallery();
-    const ub = $('undoArtistBtn'); if (ub) ub.classList.remove('hidden');
     toast(`${f.name}已清空 ✓`);
   } catch (e) {
     toast('保存失败：' + (e && e.message ? e.message : e));
   }
 }
 
-/* ============ 批量提取画师串（老数据迁移） ============ */
-let pendingBatchArtist = null;
-let lastArtistBatchBackup = null;
-
-function openBatchArtistModal() {
-  const list = artworks.filter(a => {
-    if (!a.positive) return false;
-    if (a.artistChain) return false;   // 已经分离过的跳过
-    return !!splitArtistChain(a.positive).chain;
-  });
-  if (!list.length) { toast('没有需要提取的（正面里没有画师串，或都已提取过）'); return; }
-  pendingBatchArtist = list.map(a => {
-    const r = splitArtistChain(a.positive);
-    return { id: a.id, name: a.title || a.artist || '(未命名)', rest: r.rest, chain: r.chain };
-  });
-  $('baSummary').innerHTML = `共 <b>${pendingBatchArtist.length}</b> 张画的正面提示词里夹着画师串。` +
-    (pendingBatchArtist.length > 20 ? `下面预览前 20 条：` : `要抽出的内容：`);
-  $('baPreview').innerHTML = pendingBatchArtist.slice(0, 20).map(it =>
-    `<div class="ba-item"><div class="ba-name">${esc(it.name)}</div><div class="ba-chain">${esc(it.chain)}</div></div>`
-  ).join('');
-  showModal('batchArtistModal');
-}
-
-async function runBatchArtistExtract() {
-  if (!pendingBatchArtist || !pendingBatchArtist.length) return;
-  // 先备份，供撤销
-  lastArtistBatchBackup = pendingBatchArtist.map(it => {
-    const a = getArt(it.id);
-    return { id: it.id, positive: a ? a.positive : '', artistChain: a ? (a.artistChain || '') : '' };
-  });
-  for (const it of pendingBatchArtist) {
-    const a = getArt(it.id);
-    if (!a) continue;
-    a.positive = it.rest;
-    a.artistChain = it.chain;
-  }
-  const n = pendingBatchArtist.length;
-  try {
-    await forceSave();   // 防抖机制下 83 条也只落盘 1 次
-    refreshFilters();
-    renderGallery();
-    $('batchArtistModal').classList.add('hidden');
-    const ub = $('undoArtistBtn'); if (ub) ub.classList.remove('hidden');
-    toast(`已提取 ${n} 张的画师串 ✓`);
-    pendingBatchArtist = null;
-  } catch (e) {
-    toast('保存失败：' + (e && e.message ? e.message : e));
-  }
-}
-
-// 全部放回：把所有已提取的画师串放回各自的正面提示词开头，清空该字段
-// （与批量提取互为逆操作；也带备份，可再撤销）
-async function resetAllArtistChain() {
-  const affected = artworks.filter(a => a.artistChain && a.artistChain.trim());
-  if (!affected.length) { toast('没有已提取的画师串，无需放回'); return; }
-  lastArtistBatchBackup = affected.map(a => ({
-    id: a.id, positive: a.positive, artistChain: a.artistChain || '',
-  }));
-  for (const a of affected) {
-    const chain = a.artistChain.trim();
-    const pos = (a.positive || '').trim();
-    a.positive = pos ? (chain + ', ' + pos) : chain;
-    a.artistChain = '';
-  }
-  const n = affected.length;
-  try {
-    await forceSave();
-    refreshFilters();
-    renderGallery();
-    $('batchArtistModal').classList.add('hidden');
-    const ub = $('undoArtistBtn'); if (ub) ub.classList.remove('hidden');
-    toast(`已把 ${n} 张的画师串放回正面提示词 ✓`);
-  } catch (e) {
-    toast('保存失败：' + (e && e.message ? e.message : e));
-  }
-}
-
-async function undoBatchArtistExtract() {
-  if (!lastArtistBatchBackup || !lastArtistBatchBackup.length) { toast('没有可撤销的批量提取'); return; }
-  for (const b of lastArtistBatchBackup) {
-    const a = getArt(b.id);
-    if (!a) continue;
-    a.positive = b.positive;
-    a.artistChain = b.artistChain;
-    if (b.negative !== undefined) a.negative = b.negative;   // 清空负面时也要能撤销
-  }
-  const n = lastArtistBatchBackup.length;
-  try {
-    await forceSave();
-    refreshFilters();
-    renderGallery();
-    lastArtistBatchBackup = null;
-    const ub = $('undoArtistBtn'); if (ub) ub.classList.add('hidden');
-    toast(`已撤销 ${n} 张，画师串已放回正面提示词 ✓`);
-  } catch (e) {
-    toast('撤销失败：' + (e && e.message ? e.message : e));
-  }
-}
+// （批量提取画师串功能已移除：仅保留灯箱单张「🔀 提取」）
 
 /* ============ 上传表单：已有画师快捷填入 ============ */
 function renderQuickFillArtists(targetId) {
@@ -2438,7 +2399,7 @@ function exportBackup() {
 // —— 从本机服务器把现有数据「合并」进本浏览器（顶栏「从本机导入」按钮）——
 async function pullFromServer() {
   try {
-    const r = await fetch('/api/data?_=' + Date.now(), { cache: 'no-store' });
+    const r = await fetchWithTimeout(API_BASE + '/api/data?_=' + Date.now(), { cache: 'no-store' }, location.protocol === 'file:' ? 1500 : 0);
     if (!r.ok) throw new Error('服务器返回 ' + r.status);
     const data = await r.json();
     const incA = Array.isArray(data.artworks) ? data.artworks : [];
@@ -2798,6 +2759,16 @@ async function importZipFromFolder() {
 
 /* ============ 事件绑定 ============ */
 function wireEvents() {
+  // 手机端：侧栏抽屉开关
+  const navToggle = document.getElementById('navToggle');
+  const navBackdrop = document.getElementById('navBackdrop');
+  if (navToggle) navToggle.addEventListener('click', () => document.body.classList.toggle('nav-open'));
+  if (navBackdrop) navBackdrop.addEventListener('click', () => document.body.classList.remove('nav-open'));
+  const sidebarEl = document.querySelector('.sidebar');
+  if (sidebarEl) sidebarEl.addEventListener('click', (e) => {
+    if (e.target.closest('.nav-link')) document.body.classList.remove('nav-open');
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.body.classList.remove('nav-open'); });
   // 顶部按钮
   $('uploadBtn').addEventListener('click', () => {
     pendingThumb = null; pendingFull = null;
@@ -2948,7 +2919,6 @@ function wireEvents() {
   // 批量上传：把 chip 画师填进 batchArtistAll
   $('batchUploadModal').addEventListener('click', chipArtistClick('batchArtistAll'));
   $('clearAllBtn').addEventListener('click', clearAll);
-  $('delBrokenBtn').addEventListener('click', deleteBrokenArtworks);
 
   // 导入弹窗：标签页切换
   document.querySelectorAll('.itab').forEach(t => t.addEventListener('click', () => {
@@ -3105,6 +3075,8 @@ function wireEvents() {
   $('lbDel').addEventListener('click', () => { if (lbCurrent) delArt(lbCurrent); });
   // 给画作换图：与上传一致，支持「点选 / 拖拽 / Ctrl+V 粘贴」
   $('lbImgReplace').addEventListener('click', openReplaceModal);
+  $('lbAddImg').addEventListener('click', openReplaceModal);
+  $('newTextArtBtn').addEventListener('click', createTextArtwork);
   $('replaceFile').addEventListener('change', async (e) => {
     const f = e.target.files && e.target.files[0];
     e.target.value = ''; // 重置，允许重复选同一文件
@@ -3184,10 +3156,7 @@ function wireEvents() {
   $('lbClearArtist').addEventListener('click', () => clearPromptField('artist'));
   $('lbClearPos').addEventListener('click', () => clearPromptField('pos'));
   $('lbClearNeg').addEventListener('click', () => clearPromptField('neg'));
-  $('batchArtistBtn').addEventListener('click', openBatchArtistModal);
-  $('baConfirm').addEventListener('click', runBatchArtistExtract);
-  $('baResetAll').addEventListener('click', resetAllArtistChain);
-  $('undoArtistBtn').addEventListener('click', undoBatchArtistExtract);
+  // （批量提取画师串已移除，保留灯箱单张「🔀 提取」）
   $('lbPos').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) $('lbPromptSave').click(); });
   $('lbNeg').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) $('lbPromptSave').click(); });
 
